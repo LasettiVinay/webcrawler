@@ -31,18 +31,20 @@ import util
 from logger import logging, log_file
 
 
-DEFAULT_DEPTH = 2
-THREAD_COUNT = 500
+DEFAULT_DEPTH = 3
+THREAD_COUNT = 100
 VISTED_URLS = []
 
 crawl_q = Queue()
 process_q = Queue()
 
 
-def get_log_id(thread_id, depth):
-    return f"[Thread: {thread_id} Depth: {depth}]"
+def get_log_id(depth):
+    return f"[Depth: {depth}]"
+
 
 def crawl_worker():
+    logging.info(f"Current active thead count: {threading.active_count()}")
     th_id = threading.get_ident()
     while True:
         logging.debug(f"[{th_id}] Crawl Q, waiting for message..")
@@ -53,17 +55,10 @@ def crawl_worker():
             break
         url = url_data["url"]
 
-        log_id = get_log_id(th_id, url_data["depth"])
+        log_id = get_log_id(url_data["depth"])
+        logging.info(f"{log_id} Crawl Q, handling url rcvd: {url}")
 
-        if url in VISTED_URLS:
-            logging.info(f"{log_id} Webcrawl skipped on this visited url: {url}")
-            logging.info(f"{log_id} Pages being crawled count: {len(VISTED_URLS)}")
-            crawl_q.task_done()
-            continue
-
-        logging.info(f"{log_id} Crawl Q, processing url rcvd: {url}")
-
-        crwl = Crawler(url_data, th_id)
+        crwl = Crawler(url_data)
         crwl.crawl_page()
         crawl_q.task_done()
 
@@ -79,34 +74,37 @@ def process_worker():
             break
         url = p_data["url"]
 
-        log_id = get_log_id(th_id, p_data["depth"])
-        logging.info(f"{log_id} Process Q, processing url rcvd: {url}")
+        log_id = get_log_id(p_data["depth"])
+        logging.info(f"{log_id} Process Q, handling url rcvd: {url}")
 
-        p = Process(p_data, th_id)
+        p = Process(p_data)
         p.process_page()
         process_q.task_done()
 
 
 
 class Crawler:
-    def __init__(self, url_data, th_id) -> None:
+    def __init__(self, url_data) -> None:
         self.depth = url_data["depth"]
         self.url = url_data["url"]
-        self.th_id = th_id
 
     def crawl_page(self):
-        log_id = get_log_id(self.th_id, self.depth)
         global VISTED_URLS
+        if self.url in VISTED_URLS:
+            return
 
-        logging.info(f"{log_id} Visiting url: {self.depth}, {self.url}")
-        VISTED_URLS.append(self.url)  # Update visited urls info
+        self.update_visited_links()
+        log_id = get_log_id(self.depth)
+        logging.info(f"{log_id} Starting crawl task, visiting url: {self.url}")
+        logging.info(f"{log_id} Pages being crawled count: {len(VISTED_URLS)}")
 
         resp = None
         try:
             resp = requests.get(self.url)
             resp.raise_for_status()
         except Exception as e:
-            logging.error(f"{log_id} Webcrawling might not be allowed on this page: {self.url}")
+            # Webcrawl may not be allowed on this page
+            logging.error(f"{log_id} Could not perform webcrawl on: {self.url}")
             return
 
         data = resp.text
@@ -126,25 +124,36 @@ class Crawler:
                 soup.prettify(), util.make_filename(self.url), "html"
             )
 
+        logging.info(f"{log_id} Completed crawl task!")
+
+
+    def update_visited_links(self):
+        global VISTED_URLS
+        lock = threading.Lock()
+        lock.acquire()
+        # Update visited urls info
+        VISTED_URLS.append(self.url)
+        lock.release()
+
 
 class Process:
-    def __init__(self, p_data, th_id) -> None:
+    def __init__(self, p_data) -> None:
         self.url = p_data["url"]
         self.soup = p_data["soup"]
         self.depth = p_data["depth"]
-        self.th_id = th_id
 
     def process_page(self):
-        log_id = get_log_id(self.th_id, self.depth)
+        log_id = get_log_id(self.depth)
+        logging.debug(f"{log_id} Process page data {self.url}")
 
         # TODO: Collect page information
+        logging.info(f"{log_id} Completed page data processing, {self.url}")
 
         # Start to lookup sub pages
         if self.depth == 1:
-            logging.info(f"{log_id} Reached depth limit, skip further lookup of sub pages")
+            logging.info(f"{log_id} Reached max depth, skip further search of sub pages")
             return
 
-        logging.debug(f"{log_id} Processing page data {self.url}")
         a_tags = self.soup.find_all('a')
         logging.info(f"{log_id} Number of sub pages (overall): {len(a_tags)}")
         for a_tag in self.soup.find_all('a'):
@@ -157,13 +166,18 @@ class Process:
             if not url_inf.hostname or url_inf.hostname != parent_url_inf.hostname:
                 continue
 
+            global VISTED_URLS
+            if url in VISTED_URLS:
+                logging.info(f"{log_id} Skipping visited url: {url}")
+                continue
+
             time.sleep(0.2)
+
             url_data = {
                 "url": url,
                 "depth": self.depth - 1,
             }
             crawl_q.put(url_data)
-        logging.info(f"{log_id} Completed processing page data {self.url}")
 
 
 
@@ -177,14 +191,17 @@ class Search:
         pass
 
 
-def initialize_threads(worker_objects):
-    for worker in worker_objects:
+def initialize_threads(workers):
+    threads = []
+    for name, worker in workers.items():
         for i in range(THREAD_COUNT):
-            t = threading.Thread(target=worker)
+            t = threading.Thread(name=f"{name}-{i+1}", target=worker)
+            threads.append(t)
             t.start()
+    return threads
 
 
-def terminate_threads(q_objects):
+def terminate_threads_from_q(q_objects):
     for q_item in q_objects:
         for _ in range(THREAD_COUNT):
             q_item.put(None)
@@ -214,23 +231,14 @@ def main():
     # import pdb; pdb.set_trace()
     args = get_args()
 
-    logging.info(f"Current running thead count: {threading.active_count()}")
+    workers = {
+        "crawl_worker": crawl_worker,
+        "process_worker": process_worker,
+    }
 
-    try:
-        # Init worker threads
-        initialize_threads([crawl_worker, process_worker])
-    except RuntimeError as e:
-        logging.info(f"Caught RuntimeError: {e}")
-        if str(e) == "can't start new thread":
-            logging.error(
-                "Can't launch more threads, reduce thread count,"
-                f"current active thread count: {threading.active_count()}"
-            )
-        import pdb; pdb.set_trace()
-        raise(e)
+    threads = initialize_threads(workers)
 
-    # Cleanup Cache by pushing empty data
-    util.write_to_file("", "visited_urls")
+    # Cleanup log file by pushing empty data
     util.write_to_file("", log_file)
 
     # Start webcrawling each url by starting crawl queue
@@ -252,7 +260,7 @@ def main():
         logging.info(f"Caught Exception: {e}")
         raise (e)
     finally:
-        terminate_threads(
+        terminate_threads_from_q(
             q_objects= [crawl_q, process_q]
         )
 
@@ -260,7 +268,10 @@ def main():
         for t in threading.enumerate():
             print(t)
 
-        util.writelines_to_file(VISTED_URLS, "visited_urls", mode="a+")
+        util.writelines_to_file(VISTED_URLS, "visited_urls")
+
+    for t in threads:
+        t.join()
 
 
 if __name__ == "__main__":
