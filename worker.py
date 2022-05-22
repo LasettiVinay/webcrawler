@@ -7,7 +7,7 @@ from logger import logging, log_file
 
 q = Queue()
 
-THREAD_COUNT = 30
+THREAD_COUNT = 2
 
 
 def worker():
@@ -25,7 +25,7 @@ def worker():
 
 def worker_task(item):
     logging.info(f"Starting task: '{item}'")
-    time.sleep(0.5)
+    time.sleep(2)
     logging.info(f"Completed task '{item}'")
 
 
@@ -43,17 +43,19 @@ def main():
         threads.append(t)
 
     for i in range(25):
-        item = f"w{i:02}"
+        item = f"w{i+1:02}"
         q.put(item)
 
-
-    time.sleep(5)
+    time.sleep(50)
     while q.unfinished_tasks:
-        time.sleep(0.5)
+        time.sleep(1)
         logging.info(f"---> {q.unfinished_tasks}")
 
     terminate_threads()
     logging.info("Main program Ends!")
+
+    for t in threads:
+        t.join()
 
 
 if __name__ == "__main__":
