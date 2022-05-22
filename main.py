@@ -32,7 +32,7 @@ from logger import logging, log_file
 
 
 DEFAULT_DEPTH = 3
-THREAD_COUNT = 100
+THREAD_COUNT = 500
 VISTED_URLS = []
 
 crawl_q = Queue()
@@ -44,19 +44,19 @@ def get_log_id(depth):
 
 
 def crawl_worker():
-    logging.info(f"Current active thead count: {threading.active_count()}")
+    logging.debug(f"Current active thead count: {threading.active_count()}")
     th_id = threading.get_ident()
     while True:
         logging.debug(f"[{th_id}] Crawl Q, waiting for message..")
         url_data = crawl_q.get()
         if not url_data:
-            logging.info(f"Terminating thread {th_id}..")
+            logging.debug(f"Terminating thread {th_id}..")
             crawl_q.task_done()
             break
         url = url_data["url"]
 
         log_id = get_log_id(url_data["depth"])
-        logging.info(f"{log_id} Crawl Q, handling url rcvd: {url}")
+        logging.debug(f"{log_id} Crawl Q, handling url rcvd: {url}")
 
         crwl = Crawler(url_data)
         crwl.crawl_page()
@@ -69,13 +69,13 @@ def process_worker():
         logging.debug(f"[{th_id}] Process Q, waiting for message..")
         p_data = process_q.get()
         if not p_data:
-            logging.info(f"Terminating thread {th_id}..")
+            logging.debug(f"Terminating thread {th_id}..")
             process_q.task_done()
             break
         url = p_data["url"]
 
         log_id = get_log_id(p_data["depth"])
-        logging.info(f"{log_id} Process Q, handling url rcvd: {url}")
+        logging.debug(f"{log_id} Process Q, handling url rcvd: {url}")
 
         p = Process(p_data)
         p.process_page()
@@ -93,9 +93,10 @@ class Crawler:
         if self.url in VISTED_URLS:
             return
 
-        self.update_visited_links()
         log_id = get_log_id(self.depth)
         logging.info(f"{log_id} Starting crawl task, visiting url: {self.url}")
+
+        self.update_visited_links()
         logging.info(f"{log_id} Pages being crawled count: {len(VISTED_URLS)}")
 
         resp = None
@@ -121,7 +122,7 @@ class Crawler:
         if self.depth == DEFAULT_DEPTH:
             # Optional step for debug purpose
             util.write_to_file(
-                soup.prettify(), util.make_filename(self.url), "html"
+                soup.prettify(), util.make_filename(self.url), ".html"
             )
 
         logging.info(f"{log_id} Completed crawl task!")
@@ -144,18 +145,18 @@ class Process:
 
     def process_page(self):
         log_id = get_log_id(self.depth)
-        logging.debug(f"{log_id} Process page data {self.url}")
+        logging.info(f"{log_id} Start process page data {self.url}")
 
         # TODO: Collect page information
         logging.info(f"{log_id} Completed page data processing, {self.url}")
 
         # Start to lookup sub pages
         if self.depth == 1:
-            logging.info(f"{log_id} Reached max depth, skip further search of sub pages")
+            logging.debug(f"{log_id} Reached max depth, skip further search of sub pages")
             return
 
         a_tags = self.soup.find_all('a')
-        logging.info(f"{log_id} Number of sub pages (overall): {len(a_tags)}")
+        logging.debug(f"{log_id} Number of sub pages (overall): {len(a_tags)}")
         for a_tag in self.soup.find_all('a'):
             url = a_tag.get("href")
             url_inf = urlparse(url)
@@ -168,13 +169,13 @@ class Process:
 
             global VISTED_URLS
             if url in VISTED_URLS:
-                logging.info(f"{log_id} Skipping visited url: {url}")
+                logging.debug(f"{log_id} Skipping visited url: {url}")
                 continue
 
             time.sleep(0.2)
 
             url_data = {
-                "url": url,
+                "url": str(url).strip(),
                 "depth": self.depth - 1,
             }
             crawl_q.put(url_data)
@@ -257,7 +258,7 @@ def main():
         logging.info("Attempting to abort crawling..")
         raise(e)
     except Exception as e:
-        logging.info(f"Caught Exception: {e}")
+        logging.error(f"Caught Exception: {e}")
         raise (e)
     finally:
         terminate_threads_from_q(
