@@ -32,7 +32,7 @@ from logger import logging, log_file
 
 
 DEFAULT_DEPTH = 3
-THREAD_COUNT = 3000
+THREAD_COUNT = 500
 VISTED_URLS = []
 
 crawl_q = Queue()
@@ -53,9 +53,14 @@ def crawl_worker():
             break
         url = url_data["url"]
 
-        if url in VISTED_URLS:
-            return
         log_id = get_log_id(th_id, url_data["depth"])
+
+        if url in VISTED_URLS:
+            logging.info(f"{log_id} Webcrawl skipped on this visited url: {url}")
+            logging.info(f"{log_id} Pages being crawled count: {len(VISTED_URLS)}")
+            crawl_q.task_done()
+            continue
+
         logging.info(f"{log_id} Crawl Q, processing url rcvd: {url}")
 
         crwl = Crawler(url_data, th_id)
