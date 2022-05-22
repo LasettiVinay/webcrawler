@@ -31,7 +31,7 @@ import util
 from logger import logging, log_file
 
 
-DEFAULT_DEPTH = 3
+DEFAULT_DEPTH = 2
 THREAD_COUNT = 500
 VISTED_URLS = []
 
@@ -140,7 +140,7 @@ class Process:
         # TODO: Collect page information
 
         # Start to lookup sub pages
-        if self.depth == 0:
+        if self.depth == 1:
             logging.info(f"{log_id} Reached depth limit, skip further lookup of sub pages")
             return
 

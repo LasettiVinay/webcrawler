@@ -2,50 +2,58 @@ import time
 import threading
 from queue import Queue
 
-from logger import logging
+import util
+from logger import logging, log_file
 
 q = Queue()
 
-CRAWL_THREAD_COUNT = 10
+THREAD_COUNT = 30
 
 
-def worker_urlque():
-    thread_id = str(threading.get_ident())[-5:]
+def worker():
+    thread_id = str(threading.get_ident())
     while True:
         logging.debug(f"Waiting for message.. {thread_id}")
         item = q.get()
-        logging.info(f"Message received... {thread_id} ..msg: {item}")
+        logging.debug(f"Message received... {thread_id} ..msg: {item}")
         if item is None:
             q.task_done()
             break
-        crawl_page(item, thread_id)
+        worker_task(item)
         q.task_done()
 
 
-def crawl_page(item, thread_id):
-    logging.debug(f"Processing message: {item}")
-    time.sleep(2)
-    logging.info(f"Processed thread: {thread_id}.. \tmsg: {item}")
+def worker_task(item):
+    logging.info(f"Starting task: '{item}'")
+    time.sleep(0.5)
+    logging.info(f"Completed task '{item}'")
 
 
-def end_crawlthreads():
-    for i in range(CRAWL_THREAD_COUNT):
+def terminate_threads():
+    for i in range(THREAD_COUNT):
         q.put(None)
 
 
 def main():
     threads = []
-    for i in range(CRAWL_THREAD_COUNT):
-        t = threading.Thread(target=worker_urlque)
+    util.write_to_file("", log_file)
+    for i in range(THREAD_COUNT):
+        t = threading.Thread(target=worker, name=f"worker-{i+1}")
         t.start()
         threads.append(t)
 
-    for item in ["AA", "BB", "CC"]:
+    for i in range(25):
+        item = f"w{i:02}"
         q.put(item)
 
+
     time.sleep(5)
-    end_crawlthreads()
-    threading.enumerate()   # logging.debug all running threads
+    while q.unfinished_tasks:
+        time.sleep(0.5)
+        logging.info(f"---> {q.unfinished_tasks}")
+
+    terminate_threads()
+    logging.info("Main program Ends!")
 
 
 if __name__ == "__main__":
