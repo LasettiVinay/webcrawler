@@ -36,7 +36,7 @@ from logger import logging, log_file
 
 # Settings for the app
 THREAD_COUNT = 500
-MAX_URL_MATCH_COUNT = 5
+MAX_URL_MATCH_COUNT = 1
 
 
 @dataclass
@@ -75,7 +75,7 @@ class Crawler:
             resp.raise_for_status()
         except Exception as e:
             # Webcrawl may not be allowed on this page
-            logging.error(f"{log_id} Could not perform webcrawl on: {self.url}")
+            logging.error(f"{log_id} Could not perform webcrawl on: {self.url}, due to exception:\n{e}")
             return
 
         data = resp.text
