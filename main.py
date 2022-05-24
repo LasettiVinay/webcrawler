@@ -36,7 +36,7 @@ from logger import logging, log_file
 
 # Settings for the app
 THREAD_COUNT = 500
-MAX_URL_MATCH_COUNT = 1
+MIN_URL_MATCH_COUNT = 1
 
 
 @dataclass
@@ -190,7 +190,7 @@ def end_crawl(lock) -> bool:
     lock.acquire()
     global DOCUMENTS
     result = False
-    if len(DOCUMENTS.matched_urls) == MAX_URL_MATCH_COUNT:
+    if len(DOCUMENTS.matched_urls) >= MIN_URL_MATCH_COUNT:
         result = True
 
     lock.release()
