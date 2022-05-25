@@ -103,7 +103,7 @@ class Process:
         logging.info(f"{log_id} Start process page data {self.url}")
 
         # TODO: Collect page information,
-        self.collect_page_text()
+        self.collect_page_text(log_id)
         logging.info(f"{log_id} Completed page data processing, {self.url}")
 
         # Start to lookup sub pages
@@ -114,6 +114,9 @@ class Process:
         a_tags = self.soup.find_all('a')
         logging.debug(f"{log_id} Number of sub pages (overall): {len(a_tags)}")
         for a_tag in self.soup.find_all('a'):
+            if end_crawl(self.lock):
+                break
+
             url = a_tag.get("href")
             url_inf = urlparse(url)
             # if not url_inf.hostname:
@@ -135,7 +138,7 @@ class Process:
             }
             crawl_q.put(url_data)
 
-    def collect_page_text(self):
+    def collect_page_text(self, log_id):
         # erase all script and style elements
         self.lock.acquire()
         for script in self.soup(["script", "style"]):
@@ -150,8 +153,9 @@ class Process:
         pg.text = text
         pg.matched = True if match_results else False
 
-        DOCUMENTS.docs.append(pg)
+        DOCUMENTS.docs.append(asdict(pg))
         if pg.matched:
+            logging.info(f"{log_id} Updating matched url to documents, {self.url}")
             DOCUMENTS.matched_urls.append(self.url)
 
         data = "[URL] " + self.url + "[URL]:\n" + text
